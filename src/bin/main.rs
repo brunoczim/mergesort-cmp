@@ -8,17 +8,21 @@ fn main() {
     let seed = choose_seed();
 
     println!("Using seed {}", seed);
-    println!();
 
     let mut rng = StdRng::seed_from_u64(seed);
 
-    run_cases("small", &gen_small_cases(&mut rng));
     println!();
-    run_cases("medium", &gen_medium_cases(&mut rng));
+    CaseSet::tiny(&mut rng).run_for_all_targets();
     println!();
-    run_cases("large", &gen_large_cases(&mut rng));
+    CaseSet::small(&mut rng).run_for_all_targets();
     println!();
-    run_cases("huge", &gen_huge_cases(&mut rng));
+    CaseSet::medium(&mut rng).run_for_all_targets();
+    println!();
+    CaseSet::big(&mut rng).run_for_all_targets();
+    println!();
+    CaseSet::large(&mut rng).run_for_all_targets();
+    println!();
+    CaseSet::huge(&mut rng).run_for_all_targets();
 }
 
 /// Chooses a seed. If a command line argument is given, it is used as a seed.
@@ -47,84 +51,119 @@ fn choose_seed() -> u64 {
     }
 }
 
-/// Runs the given cases for all algorithms and counts the seconds. Prints the
-/// result to the screen.
-fn run_cases(name: &str, cases: &[Arc<[i64]>]) {
-    let then = Instant::now();
-
-    for case in cases {
-        sequential::sort(case);
-    }
-
-    let elapsed = then.elapsed();
-
-    println!("Sequential took {}s for {}", elapsed.as_secs_f64(), name);
-
-    let then = Instant::now();
-
-    for case in cases {
-        parallel::sort(case);
-    }
-
-    let elapsed = then.elapsed();
-
-    println!("Parallel took {}s for {}", elapsed.as_secs_f64(), name);
+/// A set of test cases generated randomly.
+#[derive(Debug, Clone)]
+struct CaseSet<'name> {
+    name: &'name str,
+    min_size: usize,
+    max_size: usize,
+    cases: Vec<Arc<[i64]>>,
 }
 
-/// Generates random small cases.
-fn gen_small_cases<R>(rng: R) -> Vec<Arc<[i64]>>
-where
-    R: Rng,
-{
-    gen_cases_of_size(rng, 400, 10, 200)
-}
+impl<'name> CaseSet<'name> {
+    /// Generates a random case set, of `count` number of cases, and `min_size`
+    /// and `max_size` as bounds for the array sizes ([min, max], i.e. max
+    /// inclusive).
+    fn random<R>(
+        name: &'name str,
+        count: usize,
+        min_size: usize,
+        max_size: usize,
+        mut rng: R,
+    ) -> CaseSet
+    where
+        R: Rng,
+    {
+        let mut cases = Vec::with_capacity(count);
 
-/// Generates random medium-sized cases.
-fn gen_medium_cases<R>(rng: R) -> Vec<Arc<[i64]>>
-where
-    R: Rng,
-{
-    gen_cases_of_size(rng, 200, 500, 10000)
-}
+        for _ in 0 .. count {
+            let size = rng.sample(Uniform::new_inclusive(min_size, max_size));
+            let mut case = Vec::<i64>::with_capacity(size);
 
-/// Generates random large cases.
-fn gen_large_cases<R>(rng: R) -> Vec<Arc<[i64]>>
-where
-    R: Rng,
-{
-    gen_cases_of_size(rng, 50, 20000, 400000)
-}
+            for _ in 0 .. size {
+                case.push(rng.gen());
+            }
 
-/// Generates random huge cases.
-fn gen_huge_cases<R>(rng: R) -> Vec<Arc<[i64]>>
-where
-    R: Rng,
-{
-    gen_cases_of_size(rng, 10, 800000, 2000000)
-}
-
-/// Generates random cases of size in the given interval [min_elems, max_elems].
-fn gen_cases_of_size<R>(
-    mut rng: R,
-    num_cases: usize,
-    min_elems: usize,
-    max_elems: usize,
-) -> Vec<Arc<[i64]>>
-where
-    R: Rng,
-{
-    let mut targets = Vec::with_capacity(num_cases);
-
-    for _ in 0 .. num_cases {
-        let size = rng.sample(Uniform::new_inclusive(min_elems, max_elems));
-        let mut target = Vec::<i64>::with_capacity(size);
-
-        for _ in 0 .. size {
-            target.push(rng.gen());
+            cases.push(Arc::from(case));
         }
 
-        targets.push(Arc::from(target));
+        Self { name, min_size, max_size, cases }
     }
 
-    targets
+    /// Generates case set of "tiny" array sizes.
+    fn tiny<R>(rng: R) -> Self
+    where
+        R: Rng,
+    {
+        Self::random("tiny", 5120, 1, 50, rng)
+    }
+
+    /// Generates case set of "small" array sizes.
+    fn small<R>(rng: R) -> Self
+    where
+        R: Rng,
+    {
+        Self::random("small", 1280, 100, 500, rng)
+    }
+
+    /// Generates case set of "medium" array sizes.
+    fn medium<R>(rng: R) -> Self
+    where
+        R: Rng,
+    {
+        Self::random("medium", 320, 1000, 5000, rng)
+    }
+
+    /// Generates case set of "big" array sizes.
+    fn big<R>(rng: R) -> Self
+    where
+        R: Rng,
+    {
+        Self::random("big", 80, 10000, 50000, rng)
+    }
+
+    /// Generates case set of "large" array sizes.
+    fn large<R>(rng: R) -> Self
+    where
+        R: Rng,
+    {
+        Self::random("large", 20, 100000, 500000, rng)
+    }
+
+    /// Generates case set of "huge" array sizes.
+    fn huge<R>(rng: R) -> Self
+    where
+        R: Rng,
+    {
+        Self::random("huge", 5, 1000000, 5000000, rng)
+    }
+
+    /// Runs the case set for the given target sort function.
+    fn run_for_target<F>(&self, target_name: &str, mut target: F)
+    where
+        F: FnMut(&Arc<[i64]>) -> Vec<i64>,
+    {
+        let then = Instant::now();
+
+        for case in &self.cases {
+            target(case);
+        }
+
+        let elapsed = then.elapsed();
+
+        println!("Target {} took {}s", target_name, elapsed.as_secs_f64(),)
+    }
+
+    /// Runs the case set for all targets sort function.
+    fn run_for_all_targets(&self) {
+        println!(
+            "Case set {}, min size = {}, max size = {}, cases = {}",
+            self.name,
+            self.min_size,
+            self.max_size,
+            self.cases.len()
+        );
+        self.run_for_target("sequential", |array| sequential::sort(array));
+        self.run_for_target("parallel", |array| parallel::sort(array));
+    }
 }
