@@ -1,6 +1,6 @@
 //! Compares the sequential and the parallel merge sorts.
 
-use merge::{parallel, sequential};
+use mergesort_cmp::{parallel, sequential};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 use std::{env, process::exit, str::FromStr, sync::Arc, time::Instant};
 

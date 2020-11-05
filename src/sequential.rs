@@ -2,7 +2,7 @@
 //!
 //! # Examples
 //! ```rust
-//! use merge::sequential::sort;
+//! use mergesort_cmp::sequential::sort;
 //!
 //! let count = 10000;
 //! let expected = (0 .. count).collect::<Vec<_>>();
@@ -19,7 +19,7 @@ use std::cmp::Ordering;
 ///
 /// # Examples
 /// ```rust
-/// use merge::sequential;
+/// use mergesort_cmp::sequential;
 ///
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
 ///
@@ -40,7 +40,7 @@ where
 ///
 /// # Examples
 /// ```rust
-/// use merge::sequential;
+/// use mergesort_cmp::sequential;
 ///
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
 ///

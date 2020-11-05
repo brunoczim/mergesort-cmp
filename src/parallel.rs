@@ -3,7 +3,7 @@
 //!
 //! # Examples
 //! ```rust
-//! use merge::parallel;
+//! use mergesort_cmp::parallel;
 //! use std::sync::Arc;
 //!
 //! let count = 10000;
@@ -24,7 +24,7 @@ use std::{cmp::Ordering, ops::Range, sync::Arc, thread};
 ///
 /// # Examples
 /// ```rust
-/// use merge::parallel;
+/// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
 ///
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
@@ -48,7 +48,7 @@ where
 ///
 /// # Examples
 /// ```rust
-/// use merge::parallel;
+/// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
 ///
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
@@ -73,7 +73,7 @@ where
 ///
 /// # Examples
 /// ```rust
-/// use merge::parallel;
+/// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
 ///
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
@@ -98,7 +98,7 @@ where
 ///
 /// # Examples
 /// ```rust
-/// use merge::parallel;
+/// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
 ///
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
