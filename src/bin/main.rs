@@ -168,16 +168,20 @@ impl<'name> CaseSet<'name> {
 
         self.run_for_target("sequential", |array| sequential::sort(array));
 
-        let mut logical_cpus = parallel::SortOptions::default_order();
-        logical_cpus.thread_per_cpu();
-        self.run_for_target("parallel logical", |array| {
-            logical_cpus.run(array)
-        });
+        let mut options = parallel::default_order();
+        options.thread_per_cpu();
+        self.run_for_target("parallel logical", |array| options.sort(array));
 
-        let mut physical_cpus = parallel::SortOptions::default_order();
-        physical_cpus.thread_per_physical_cpu();
-        self.run_for_target("parallel physical", |array| {
-            physical_cpus.run(array)
-        });
+        let mut options = parallel::default_order();
+        options.thread_per_physical_cpu();
+        self.run_for_target("parallel physical ", |array| options.sort(array));
+
+        let mut options = parallel::default_order();
+        options.threads(num_cpus::get() * 2);
+        self.run_for_target("parallel 2x logical", |array| options.sort(array));
+
+        let mut options = parallel::default_order();
+        options.threads(num_cpus::get() * 4);
+        self.run_for_target("parallel 4x logical", |array| options.sort(array));
     }
 }

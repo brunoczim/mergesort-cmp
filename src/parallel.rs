@@ -2,6 +2,7 @@
 //! spawning a thread everytime.
 //!
 //! # Examples
+//! ## Using Defaults
 //! ```rust
 //! use mergesort_cmp::parallel;
 //! use std::sync::Arc;
@@ -15,8 +16,47 @@
 //!
 //! assert_eq!(expected, sorted);
 //! ```
+//!
+//! # Using Custom Range And Custom Thread Number:
+//! ```rust
+//! use mergesort_cmp::parallel;
+//! use std::sync::Arc;
+//!
+//! let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
+//! let array: Arc<[i32]> = Arc::from(&array as &[_]);
+//!
+//! let sorted = parallel::default_order()
+//!     .range(3 .. 7)
+//!     .threads(8)
+//!     .sort(&array);
+//!
+//! assert_eq!(sorted, &[-95, 12, 20000, 20001]);
+//! ```
+//!
+//! # Using Custom Everything
+//! ```rust
+//! use mergesort_cmp::parallel;
+//! use std::sync::Arc;
+//!
+//! let array = [-1, 5, 91293, 12, -95, 20000, 95, -12, 7];
+//! let array: Arc<[i32]> = Arc::from(&array as &[_]);
+//!
+//! // Compares first the value, and then, the sign.
+//! let compare = |left: &i32, right: &i32| {
+//!     let abs_ord = left.abs().cmp(&right.abs());
+//!     let sign_ord = left.signum().cmp(&right.signum());
+//!     abs_ord.then(sign_ord)
+//! };
+//!
+//! let sorted = parallel::custom_order(compare)
+//!     .range(3 .. 7)
+//!     .threads(8)
+//!     .sort(&array);
+//!
+//! assert_eq!(sorted, &[12, -95, 95, 20000]);
+//! ```
 
-use std::{cmp::Ordering, ops::Range, sync::Arc, thread};
+use std::{cmp::Ordering, marker::PhantomData, ops::Range, sync::Arc, thread};
 
 /// A parallel merge sort. This function uses the default order, sorts the whole
 /// array, and spawns 1 thread per logical CPU. For customization, see
@@ -40,14 +80,10 @@ pub fn sort<T>(array: &Arc<[T]>) -> Vec<T>
 where
     T: Ord + Clone + Send + Sync + 'static,
 {
-    SortOptions::default_order().run(array)
+    default_order().sort(array)
 }
 
-/// Options to configure the parallel merge sort.
-///
 /// # Examples
-///
-/// ## Default Order
 /// ```rust
 /// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
@@ -55,12 +91,22 @@ where
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
 /// let array: Arc<[i32]> = Arc::from(&array as &[_]);
 ///
-/// let sorted = parallel::SortOptions::default_order().run(&array);
+/// let sorted = parallel::default_order().sort(&array);
 ///
 /// assert_eq!(sorted, &[-95, -12, -1, 5, 7, 12, 20000, 20001, 91293]);
-/// ```
-///
-/// ## Reverse Order
+pub fn default_order<T>() -> SortOptions<T, impl Fn(&T, &T) -> Ordering>
+where
+    T: Ord,
+{
+    SortOptions {
+        threads: num_cpus::get(),
+        compare: Arc::new(Ord::cmp),
+        range: None,
+        _marker: PhantomData,
+    }
+}
+
+/// # Examples
 /// ```rust
 /// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
@@ -68,12 +114,24 @@ where
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
 /// let array: Arc<[i32]> = Arc::from(&array as &[_]);
 ///
-/// let sorted = parallel::SortOptions::reverse_order().run(&array);
+/// let sorted = parallel::reverse_order().sort(&array);
 ///
 /// assert_eq!(sorted, &[91293, 20001, 20000, 12, 7, 5, -1, -12, -95]);
 /// ```
-///
-/// ## Separates Even Numbers From Odd Numbers
+pub fn reverse_order<T>() -> SortOptions<T, impl Fn(&T, &T) -> Ordering>
+where
+    T: Ord,
+{
+    SortOptions {
+        threads: num_cpus::get(),
+        compare: Arc::new(|left: &T, right: &T| right.cmp(left)),
+        range: None,
+        _marker: PhantomData,
+    }
+}
+
+/// ## Examples
+/// Separating even numbers from odd numbers.
 /// ```rust
 /// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
@@ -84,27 +142,24 @@ where
 /// let compare = |left: &i32, right: &i32| {
 ///     (left & 1).cmp(&(right & 1)).then(left.cmp(right))
 /// };
-/// let sorted = parallel::SortOptions::from_compare(compare).run(&array);
+/// let sorted = parallel::custom_order(compare).sort(&array);
 ///
 /// assert_eq!(sorted, &[-12, 12, 20000, -95, -1, 5 ,7, 20001, 91293]);
 /// ```
-///
-/// ## Custom Range And Custom Thread Number
-/// ```rust
-/// use mergesort_cmp::parallel;
-/// use std::sync::Arc;
-///
-/// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
-/// let array: Arc<[i32]> = Arc::from(&array as &[_]);
-///
-/// let sorted = parallel::SortOptions::default_order()
-///     .range(3 .. 7)
-///     .threads(8)
-///     .run(&array);
-///
-/// assert_eq!(sorted, &[-95, 12, 20000, 20001]);
-/// ```
-pub struct SortOptions<F> {
+pub fn custom_order<T, F>(compare: F) -> SortOptions<T, F>
+where
+    F: Fn(&T, &T) -> Ordering,
+{
+    SortOptions {
+        threads: num_cpus::get(),
+        compare: Arc::new(compare),
+        range: None,
+        _marker: PhantomData,
+    }
+}
+
+/// Options to configure the parallel merge sort.
+pub struct SortOptions<T, F> {
     /// On how many threads the sorting will be executed.
     threads: usize,
     /// Comparison function.
@@ -112,41 +167,11 @@ pub struct SortOptions<F> {
     /// What range of the array will be sorted. `None` automatically selects
     /// the full array.
     range: Option<Range<usize>>,
+    /// Here so we can have T as a type parameter.
+    _marker: PhantomData<*const T>,
 }
 
-impl<T> SortOptions<fn(&T, &T) -> Ordering>
-where
-    T: Ord,
-{
-    /// Initializes the options using the default comparison order.
-    pub fn default_order() -> Self {
-        Self {
-            threads: num_cpus::get(),
-            compare: Arc::new(Ord::cmp),
-            range: None,
-        }
-    }
-
-    /// Initalizes the options using the reversed comparison order.
-    pub fn reverse_order() -> Self {
-        Self {
-            threads: num_cpus::get(),
-            compare: Arc::new(|a, b| b.cmp(a)),
-            range: None,
-        }
-    }
-}
-
-impl<F> SortOptions<F> {
-    /// Initalizes the options from a custom comparison function.
-    pub fn from_compare(compare: F) -> Self {
-        Self {
-            threads: num_cpus::get(),
-            compare: Arc::new(compare),
-            range: None,
-        }
-    }
-
+impl<T, F> SortOptions<T, F> {
     /// Sets the number of threads used.
     pub fn threads(&mut self, threads: usize) -> &mut Self {
         self.threads = threads;
@@ -176,7 +201,7 @@ impl<F> SortOptions<F> {
     }
 
     /// Sorts the given array using the given options.
-    pub fn run<T>(&self, array: &Arc<[T]>) -> Vec<T>
+    pub fn sort(&self, array: &Arc<[T]>) -> Vec<T>
     where
         F: Fn(&T, &T) -> Ordering + Send + Sync + 'static,
         T: Clone + Send + Sync + 'static,
