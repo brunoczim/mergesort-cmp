@@ -4,6 +4,8 @@ use mergesort_cmp::{parallel, sequential};
 use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 use std::{env, process::exit, str::FromStr, sync::Arc, time::Instant};
 
+type Data = i64;
+
 fn main() {
     let seed = choose_seed();
 
@@ -57,7 +59,7 @@ struct CaseSet<'name> {
     name: &'name str,
     min_size: usize,
     max_size: usize,
-    cases: Vec<Arc<[i64]>>,
+    cases: Vec<Arc<[Data]>>,
 }
 
 impl<'name> CaseSet<'name> {
@@ -78,7 +80,7 @@ impl<'name> CaseSet<'name> {
 
         for _ in 0 .. count {
             let size = rng.sample(Uniform::new_inclusive(min_size, max_size));
-            let mut case = Vec::<i64>::with_capacity(size);
+            let mut case = Vec::<Data>::with_capacity(size);
 
             for _ in 0 .. size {
                 case.push(rng.gen());
@@ -141,7 +143,7 @@ impl<'name> CaseSet<'name> {
     /// Runs the case set for the given target sort function.
     fn run_for_target<F>(&self, target_name: &str, mut target: F)
     where
-        F: FnMut(&Arc<[i64]>) -> Vec<i64>,
+        F: FnMut(&Arc<[Data]>) -> Vec<Data>,
     {
         let then = Instant::now();
 
@@ -163,7 +165,19 @@ impl<'name> CaseSet<'name> {
             self.max_size,
             self.cases.len()
         );
+
         self.run_for_target("sequential", |array| sequential::sort(array));
-        self.run_for_target("parallel", |array| parallel::sort(array));
+
+        let mut logical_cpus = parallel::SortOptions::default_order();
+        logical_cpus.thread_per_cpu();
+        self.run_for_target("parallel logical", |array| {
+            logical_cpus.run(array)
+        });
+
+        let mut physical_cpus = parallel::SortOptions::default_order();
+        physical_cpus.thread_per_physical_cpu();
+        self.run_for_target("parallel physical", |array| {
+            physical_cpus.run(array)
+        });
     }
 }

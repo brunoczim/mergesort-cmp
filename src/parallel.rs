@@ -18,7 +18,9 @@
 
 use std::{cmp::Ordering, ops::Range, sync::Arc, thread};
 
-/// A parallel sorter. Uses a merge sort.
+/// A parallel merge sort. This function uses the default order, sorts the whole
+/// array, and spawns 1 thread per logical CPU. For customization, see
+/// [`SortOptions`].
 ///
 /// It uses the default comparison order and sorts the whole array.
 ///
@@ -38,15 +40,14 @@ pub fn sort<T>(array: &Arc<[T]>) -> Vec<T>
 where
     T: Ord + Clone + Send + Sync + 'static,
 {
-    let range = 0 .. array.len();
-    sort_range(array, range)
+    SortOptions::default_order().run(array)
 }
 
-/// A parallel sorter parameterized by a comparison function. Uses a merge sort.
-///
-/// It uses the given comparison function to compare and sorts the whole array.
+/// Options to configure the parallel merge sort.
 ///
 /// # Examples
+///
+/// ## Default Order
 /// ```rust
 /// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
@@ -54,24 +55,25 @@ where
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
 /// let array: Arc<[i32]> = Arc::from(&array as &[_]);
 ///
-/// let sorted = parallel::sort_by(&array, |a, b| b.cmp(&a));
+/// let sorted = parallel::SortOptions::default_order().run(&array);
+///
+/// assert_eq!(sorted, &[-95, -12, -1, 5, 7, 12, 20000, 20001, 91293]);
+/// ```
+///
+/// ## Reverse Order
+/// ```rust
+/// use mergesort_cmp::parallel;
+/// use std::sync::Arc;
+///
+/// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
+/// let array: Arc<[i32]> = Arc::from(&array as &[_]);
+///
+/// let sorted = parallel::SortOptions::reverse_order().run(&array);
 ///
 /// assert_eq!(sorted, &[91293, 20001, 20000, 12, 7, 5, -1, -12, -95]);
 /// ```
-pub fn sort_by<T, F>(array: &Arc<[T]>, compare: F) -> Vec<T>
-where
-    T: Clone + Send + Sync + 'static,
-    F: Fn(&T, &T) -> Ordering + Send + Sync + 'static,
-{
-    let range = 0 .. array.len();
-    sort_range_by(array, range, compare)
-}
-
-/// A parallel sorter parameterized by a range of the array. Uses a merge sort.
 ///
-/// It uses the default comparison order and sorts only the given range.
-///
-/// # Examples
+/// ## Separates Even Numbers From Odd Numbers
 /// ```rust
 /// use mergesort_cmp::parallel;
 /// use std::sync::Arc;
@@ -79,52 +81,109 @@ where
 /// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
 /// let array: Arc<[i32]> = Arc::from(&array as &[_]);
 ///
-/// let sorted = parallel::sort_range(&array, 3 .. 7);
+/// let compare = |left: &i32, right: &i32| {
+///     (left & 1).cmp(&(right & 1)).then(left.cmp(right))
+/// };
+/// let sorted = parallel::SortOptions::from_compare(compare).run(&array);
+///
+/// assert_eq!(sorted, &[-12, 12, 20000, -95, -1, 5 ,7, 20001, 91293]);
+/// ```
+///
+/// ## Custom Range And Custom Thread Number
+/// ```rust
+/// use mergesort_cmp::parallel;
+/// use std::sync::Arc;
+///
+/// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
+/// let array: Arc<[i32]> = Arc::from(&array as &[_]);
+///
+/// let sorted = parallel::SortOptions::default_order()
+///     .range(3 .. 7)
+///     .threads(8)
+///     .run(&array);
 ///
 /// assert_eq!(sorted, &[-95, 12, 20000, 20001]);
 /// ```
-pub fn sort_range<T>(array: &Arc<[T]>, range: Range<usize>) -> Vec<T>
-where
-    T: Ord + Clone + Send + Sync + 'static,
-{
-    sort_range_by(array, range, Ord::cmp)
+pub struct SortOptions<F> {
+    /// On how many threads the sorting will be executed.
+    threads: usize,
+    /// Comparison function.
+    compare: Arc<F>,
+    /// What range of the array will be sorted. `None` automatically selects
+    /// the full array.
+    range: Option<Range<usize>>,
 }
 
-/// A parallel sorter parameterized by a comparison function, and a range on the
-/// array. Uses a merge sort.
-///
-/// It uses the given comparison function to compare and sorts the given range
-/// of the array.
-///
-/// # Examples
-/// ```rust
-/// use mergesort_cmp::parallel;
-/// use std::sync::Arc;
-///
-/// let array = [-1, 5, 91293, 12, -95, 20000, 20001, -12, 7];
-/// let array: Arc<[i32]> = Arc::from(&array as &[_]);
-///
-/// let sorted = parallel::sort_range_by(&array, 3 .. 7, |a, b| b.cmp(&a));
-///
-/// assert_eq!(sorted, &[20001, 20000, 12, -95]);
-/// ```
-pub fn sort_range_by<T, F>(
-    array: &Arc<[T]>,
-    range: Range<usize>,
-    compare: F,
-) -> Vec<T>
+impl<T> SortOptions<fn(&T, &T) -> Ordering>
 where
-    T: Clone + Send + Sync + 'static,
-    F: Fn(&T, &T) -> Ordering + Send + Sync + 'static,
+    T: Ord,
 {
-    let num_cpus = num_cpus::get();
-    let threads = if num_cpus.is_power_of_two() {
-        num_cpus
-    } else {
-        num_cpus.next_power_of_two()
-    };
-    let compare_arc = Arc::new(compare);
-    split(&array, range, &compare_arc, threads)
+    /// Initializes the options using the default comparison order.
+    pub fn default_order() -> Self {
+        Self {
+            threads: num_cpus::get(),
+            compare: Arc::new(Ord::cmp),
+            range: None,
+        }
+    }
+
+    /// Initalizes the options using the reversed comparison order.
+    pub fn reverse_order() -> Self {
+        Self {
+            threads: num_cpus::get(),
+            compare: Arc::new(|a, b| b.cmp(a)),
+            range: None,
+        }
+    }
+}
+
+impl<F> SortOptions<F> {
+    /// Initalizes the options from a custom comparison function.
+    pub fn from_compare(compare: F) -> Self {
+        Self {
+            threads: num_cpus::get(),
+            compare: Arc::new(compare),
+            range: None,
+        }
+    }
+
+    /// Sets the number of threads used.
+    pub fn threads(&mut self, threads: usize) -> &mut Self {
+        self.threads = threads;
+        self
+    }
+
+    /// Sets the number of threads to the number of logical CPUs (default).
+    pub fn thread_per_cpu(&mut self) -> &mut Self {
+        self.threads(num_cpus::get())
+    }
+
+    /// Sets the number of threads to the number of physical CPUs.
+    pub fn thread_per_physical_cpu(&mut self) -> &mut Self {
+        self.threads(num_cpus::get_physical())
+    }
+
+    /// Sets the range of the array on which sort will happen.
+    pub fn range(&mut self, range: Range<usize>) -> &mut Self {
+        self.range = Some(range);
+        self
+    }
+
+    /// Sets the array to be fully sorted (default).
+    pub fn full_range(&mut self) -> &mut Self {
+        self.range = None;
+        self
+    }
+
+    /// Sorts the given array using the given options.
+    pub fn run<T>(&self, array: &Arc<[T]>) -> Vec<T>
+    where
+        F: Fn(&T, &T) -> Ordering + Send + Sync + 'static,
+        T: Clone + Send + Sync + 'static,
+    {
+        let range = self.range.clone().unwrap_or(0 .. array.len());
+        split(array, range, &self.compare, self.threads)
+    }
 }
 
 /// Performs the "split" step of the merge sort algorithm, and then merges the
