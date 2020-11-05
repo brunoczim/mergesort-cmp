@@ -1,0 +1,9 @@
+[package]
+name = "merge"
+version = "0.1.0"
+authors = ["brunoczim <brunoczim@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+num_cpus = "1.13.0"
+rand = "0.7.3"
