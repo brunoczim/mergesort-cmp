@@ -174,7 +174,7 @@ impl<'name> CaseSet<'name> {
 
         let mut options = parallel::default_order();
         options.thread_per_physical_cpu();
-        self.run_for_target("parallel physical ", |array| options.sort(array));
+        self.run_for_target("parallel physical", |array| options.sort(array));
 
         let mut options = parallel::default_order();
         options.threads(num_cpus::get() * 2);
